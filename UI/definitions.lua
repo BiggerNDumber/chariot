@@ -113,7 +113,19 @@ chariot.ui.opts.box = function()
           name = "Death",
           master = true,
         },
-		{
+        {
+          id = "hermit",
+          default = false,
+          name = "Hermit",
+          master = true,
+        },
+        {
+          id = "temperance",
+          default = false,
+          name = "Temperance",
+          master = true,
+        },
+		    {
           id = "fool",
           default = true,
           name = "Fool",
@@ -130,28 +142,52 @@ chariot.ui.opts.box = function()
           name = "Turtle Bean",
           master = true,
         },
-		{
+		    {
           id = "blueprint",
           default = true,
           name = "Blueprint",
           master = true,
         },
-		{
+		    {
           id = "brainstorm",
           default = true,
           name = "Brainstorm",
           master = true,
         },
-		{
+		    {
           id = "chaos_the_clown",
           default = false,
           name = "Chaos the Clown",
           master = true,
         },
-		{
+		    {
           id = "diet_cola",
           default = true,
           name = "Diet Cola",
+          master = true,
+        },
+        {
+          id = "mime",
+          default = true,
+          name = "Mime",
+          master = true,
+        },
+        {
+          id = "reserved_parking",
+          default = true,
+          name = "Reserved Parking",
+          master = true,
+        },
+        {
+          id = "burglar",
+          default = true,
+          name = "Burglar",
+          master = true,
+        },
+        {
+          id = "showman",
+          default = true,
+          name = "Showman",
           master = true,
         },
       },
@@ -163,6 +199,17 @@ chariot.ui.opts.box = function()
           id = "negative",
           default = true,
           name = "Negative",
+          master = true,
+        },
+      },
+    },
+    automatic = {
+      title = "Automatic",
+      opts = {
+        {
+          id = "automatic",
+          default = false,
+          name = "Buy and Sell",
           master = true,
         },
       },
