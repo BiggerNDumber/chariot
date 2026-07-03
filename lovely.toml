@@ -4,6 +4,12 @@ dump_lua = true
 priority = 0
 
 [[patches]]
+[patches.module]
+source = 'nativefs.lua'
+before = 'main.lua'
+name = 'nativefs'
+
+[[patches]]
 [patches.copy]
 target = "main.lua"
 position = "append"
