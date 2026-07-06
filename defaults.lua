@@ -12,8 +12,8 @@ return {
 
   -- Tarots
   death = false,
-  fool = true,
-  judgement = true,
+  fool = false,
+  judgement = false,
   hermit = false,
   temperance = false,
 
@@ -21,5 +21,5 @@ return {
   negative = true,
 
   -- Automatic
-  automatic = false
+  automatic = true
 }

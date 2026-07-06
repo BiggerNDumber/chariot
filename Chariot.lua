@@ -7,8 +7,24 @@ chariot = {
     ui = {
         opts = {},
     },
-    polychrome_blocked = false,
     currently_selling = false,
+    reroll_is_setup = false,
+    reroll_is_setup_uncommon = false,
+
+    --Used to find the value
+    copy_reroll_input = -1, --Set to -1
+    copy_reroll_blocker = -1,
+    reroll_count = 0,
+
+    reroll_limit = -1,
+    blocking_jokers = {
+        --  "j_dna",
+        --  "j_ring_master",
+        --  "j_diet_cola",
+
+        --  "c_death",
+        --  "c_fool",
+    },
 }
 
 local mod_dir = lovely.mod_dir -- Cache the base directory
@@ -72,10 +88,11 @@ function Controller:key_press_update(key, dt)
     if love.keyboard.isDown("lctrl") then
         if key == "q" then
             if chariot.config.automatic then
-                chariot.update_polychrome()
-                chariot.reroll_automatic()
+                chariot.initialize_reroll()
+                print("We are reroll ready: " .. tostring(chariot.reroll_is_setup))
+                print("We are uncommon reroll ready: " .. tostring(chariot.reroll_is_setup_uncommon))
+                chariot.reroll_automatic(false)
             else
-                chariot.update_polychrome()
                 chariot.reroll()
             end
         end
@@ -83,71 +100,79 @@ function Controller:key_press_update(key, dt)
             chariot.cancel_reroll = true
         end
         if key == "e" then
-            for _, v in ipairs(G.shop_jokers.cards) do
-                print(v.config.center_key)
-            end
         end
     end
 end
 
-chariot.update_polychrome = function()
-    for _, current_joker in ipairs(G.jokers.cards) do
-        if current_joker.edition and current_joker.edition.type == "polychrome" then
-            chariot.polychrome_blocked = true
+chariot.initialize_reroll = function()
+    if chariot.copy_reroll_input > 0 then
+        chariot.copy_reroll_blocker = chariot.copy_reroll_input - G.GAME.current_round.reroll_cost
+        chariot.copy_reroll_blocker = chariot.copy_reroll_blocker - 8
+    end
+    
+    local ice_cream = false
+    local popcorn = false
+    local cavendish = false
+    local madness = false
+    local bean = false
+    local seltzer = false
+    for _, v in ipairs(G.jokers.cards) do
+        if v.edition and v.edition.type == "negative" then
+            if v.config.center_key == "j_ice_cream" then ice_cream = true end
+            if v.config.center_key == "j_popcorn" then popcorn = true end
+            if v.config.center_key == "j_cavendish" then cavendish = true end
+            if v.config.center_key == "j_madness" then madness = true end
+            if v.config.center_key == "j_turtle_bean" then bean = true end
+            if v.config.center_key == "j_selzer" then seltzer = true end
         end
     end
+
+    chariot.reroll_is_setup = ice_cream and popcorn and cavendish
+    chariot.reroll_is_setup_uncommon = madness and bean and seltzer
 end
 
-chariot.attempt_sell_blueprints = function()
-    if G.jokers.cards[#G.jokers.cards].config.center_key ~= "j_diet_cola" and G.jokers.cards[#G.jokers.cards].config.center_key ~= "j_brainstorm" then return end
-    if G.jokers.cards[#G.jokers.cards-1].config.center_key == "j_blueprint" then
-        if G.jokers.cards[#G.jokers.cards-1].edition and G.jokers.cards[#G.jokers.cards-1].edition.type == "negative" then
-            return
-        end
-        if G.jokers.cards[#G.jokers.cards-1].edition and G.jokers.cards[#G.jokers.cards-1].edition.type == "polychrome" then
-            chariot.polychrome_blocked = false
-        end
-        chariot.execute(G.jokers.cards[#G.jokers.cards-1], true, false, false)
-        return true
-    end
-    return false
-end
-
--- TODO: Mark out the indexes of the negatives, only iterate over the non-negatives
-chariot.sell_jokers = function()
+chariot.sell_rightmost_joker = function()
     chariot.currently_selling = true
-    if chariot.attempt_sell_blueprints() then return true end
-    for _, current_joker in ipairs(G.jokers.cards) do
-        if not current_joker.edition or current_joker.edition.type ~= "negative" then
-            if current_joker.config.center_key ~= "j_blueprint" then
-                if current_joker.config.center_key ~= "j_chaos" or G.GAME.current_round.reroll_cost > 0 then
-                    if current_joker.edition and current_joker.edition.type == "polychrome" then
-                        chariot.polychrome_blocked = false
-                    end
-                    chariot.execute(current_joker, true, false, false)
-                    return true
-                end
+    -- If we have a negative in the far right we exit
+    local operating_card = G.jokers.cards[#G.jokers.cards]
+    if operating_card.edition and operating_card.edition.type == "negative" then
+        -- If we're reroll set, then we can continue if it's a chaos
+        if not (chariot.reroll_is_setup and operating_card.config.center_key == "j_chaos") then
+            -- If our uncommons are set, we can continue if it's a cola
+            if not (chariot.reroll_is_setup_uncommon and operating_card.config.center_key == "j_diet_cola") then
+                chariot.currently_selling = false
+                return false
             end
         end
     end
-    chariot.currently_selling = false
-    return false
-end
-
-chariot.jokers_full = function()
-    local total_non_negatives = 0
-    for _, current_joker in ipairs(G.jokers.cards) do
-        if not current_joker.edition or current_joker.edition.type ~= "negative" then
-            total_non_negatives = total_non_negatives + 1
+    -- Only sell the chaos if our reroll cost isn't 0
+    if operating_card.config.center_key == "j_chaos" then
+        if G.GAME.current_round.reroll_cost > 0 then
+            chariot.execute(operating_card, true, false, false)
+            return true
         end
+        chariot.currently_selling = false
+        return false
     end
-    return total_non_negatives > 5
+
+    -- We don't sell blueprints or brainstorms
+    if operating_card.config.center_key == "j_blueprint" or operating_card.config.center_key == "j_brainstorm" then
+        chariot.currently_selling = false
+        return false
+    end
+    
+    chariot.execute(operating_card, true, false, false)
+    return true
 end
 
 chariot.reset_reroll = function()
     chariot.cancel_reroll = nil
     chariot.currently_selling = false
-    chariot.polychrome_blocked = false
+    chariot.reroll_is_setup = false
+    chariot.reroll_is_setup_uncommon = false
+    chariot.copy_reroll_blocker = -1
+    chariot.copy_reroll_input = -1
+    chariot.reroll_count = 0
 end
 
 chariot.reroll = function()
@@ -159,7 +184,9 @@ chariot.reroll = function()
     G.FUNCS.reroll_shop()
     G.E_MANAGER:add_event(Event({
         trigger = 'after',
-        delay = 1,
+        delay = 0.01,
+        blocking = false,
+        no_delete = true,
         func = function()
             chariot.reroll()
             return true
@@ -167,18 +194,192 @@ chariot.reroll = function()
     }))
 end
 
-chariot.reroll_automatic = function()
+chariot.judgement_user = function()
+    for _, v in ipairs(G.consumeables.cards) do
+        if v.config.center_key == "c_judgement" then
+            chariot.execute(v, false, true, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.reroll_automatic(true)
+                    return true
+                end
+            }))
+            return true
+        end
+    end
+    for _, v in ipairs(G.shop_jokers.cards) do
+        if v.config.center_key == "c_judgement" then
+            chariot.execute(v, true, true, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.reroll_automatic(true)
+                    return true
+                end
+            }))
+            return true
+        end
+        if v.config.center_key == "c_fool" and #G.consumeables.cards < G.consumeables.config.card_limit then
+            chariot.execute(v, false, true, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.judgement_user()
+                    return true
+                end
+            }))
+            return true
+        end
+    end
+    chariot.judgement_buyer()
+end
+
+chariot.judgement_buyer = function()
+    for _, v in ipairs(G.shop_jokers.cards) do
+        if v.config.center_key == "c_judgement" and #G.consumeables.cards < G.consumeables.config.card_limit then
+            chariot.execute(v, true, false, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.judgement_buyer()
+                    return true
+                end
+            }))
+            return
+        end
+        if v.config.center_key == "c_fool" and #G.consumeables.cards < G.consumeables.config.card_limit then
+            chariot.execute(v, false, true, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.judgement_buyer()
+                    return true
+                end
+            }))
+            return
+        end
+    end
+
+    chariot.reroll_count = chariot.reroll_count + 1
+    G.FUNCS.reroll_shop()
+
+    G.E_MANAGER:add_event(Event({
+        trigger = 'after',
+        delay = 0.01,
+        blocking = false,
+        no_delete = true,
+        func = function()
+            chariot.reroll_automatic(false)
+            return true
+        end
+    }))
+
+    return false
+end
+
+chariot.chaos_in_shop = function()
+    for _, v in ipairs(G.shop_jokers.cards) do
+        if v.config.center_key == "j_chaos" then
+            return v
+        end
+    end
+    return nil
+end
+
+chariot.valid_chaos_in_jokers = function()
+    if G.jokers.cards[#G.jokers.cards].config.center_key == "j_chaos" and G.GAME.current_round.reroll_cost < 1 then
+        return true
+    end
+    return false
+end
+
+chariot.bought_cola = function()
+    for _, v in ipairs(G.shop_jokers.cards) do
+        if v.config.center_key == "j_diet_cola" then
+            chariot.execute(v, true, false, false)
+            return true
+        end
+    end
+    return false
+end
+
+chariot.negative_in_shop = function()
+    for _, v in ipairs(G.shop_jokers.cards) do
+        if v.edition and v.edition.type == "negative" then
+            -- Don't count it if we have all common negatives and this is a dupe
+            if not (chariot.reroll_is_setup and (v.config.center_key == "j_joker" or v.config.center_key == "j_chaos")) then
+                if not (chariot.reroll_is_setup_uncommon and (v.config.center_key == "j_diet_cola" or v.config.center_key == "j_ring_master")) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+chariot.blocking_joker_in_shop = function()
+    for _, v in ipairs(G.shop_jokers.cards) do
+        for _, b in ipairs(chariot.blocking_jokers) do
+            if v.config.center_key == b then
+                return true
+            end
+        end
+        if chariot.config.fool and v.config.center_key == "c_fool" then return true end
+        if chariot.config.death and v.config.center_key == "c_death" then return true end
+    end
+    return false
+end
+
+chariot.reroll_automatic = function(from_judgement)
     if chariot.cancel_reroll or G.GAME.dollars - G.GAME.current_round.reroll_cost < 0 then
         chariot.reset_reroll()
         return
     end
 
-    if chariot.sell_jokers() then
+    if chariot.reroll_limit ~= nil and chariot.reroll_limit > 0 and G.GAME.current_round.reroll_cost == chariot.reroll_limit then
+        chariot.reset_reroll()
+        return
+    end
+
+    if chariot.copy_reroll_blocker > 0 and chariot.copy_reroll_blocker < chariot.reroll_count then
+        chariot.reset_reroll()
+        return
+    end
+
+    if chariot.blocking_joker_in_shop() then
+        chariot.reset_reroll()
+        return
+    end
+
+    if chariot.negative_in_shop() then
+        chariot.reset_reroll()
+        return
+    end
+
+    if chariot.sell_rightmost_joker() then
         G.E_MANAGER:add_event(Event({
             trigger = 'after',
-            delay = 0.05,
+            delay = 0.01,
+            blocking = false,
+            no_delete = true,
             func = function()
-                chariot.reroll_automatic()
+                chariot.reroll_automatic(false)
                 return true
             end
         }))
@@ -187,66 +388,42 @@ chariot.reroll_automatic = function()
 
     if chariot.currently_selling then return end
 
-    if chariot.jokers_full() then
-        chariot.reset_reroll()
+    if chariot.bought_cola() then
+        G.E_MANAGER:add_event(Event({
+            trigger = 'after',
+            delay = 0.01,
+            blocking = false,
+            no_delete = true,
+            func = function()
+                chariot.reroll_automatic(false)
+                return true
+            end
+        }))
         return
     end
 
-    local reroll_shop = true
-    local correct_card = chariot.card_in_shop()
-    if correct_card ~= nil then
-        local should_end = true
-        local identifier = chariot.verify_card(correct_card)
-        local has_polychrome = correct_card.edition and correct_card.edition.type == "polychrome"
-        if identifier == "sell" then
-            if chariot.polychrome_blocked and has_polychrome then
-                chariot.reset_reroll()
-                return
-            end
-            if has_polychrome then chariot.polychrome_blocked = true end
-            chariot.execute(correct_card, true, false, false)
-            should_end = false
-            reroll_shop = false
-        end
-        if identifier == "blueprint" then
-            if chariot.polychrome_blocked and has_polychrome then
-                chariot.reset_reroll()
-                return
-            end
-            if has_polychrome then chariot.polychrome_blocked = true end
-            chariot.execute(correct_card, true, false, false)
-            should_end = false
-            reroll_shop = false
-        end
-        if identifier == "chaos" then
-            if chariot.polychrome_blocked and has_polychrome then
-                chariot.reset_reroll()
-                return
-            end
-            if has_polychrome then chariot.polychrome_blocked = true end
-            chariot.execute(correct_card, true, false, false)
-            should_end = false
-            reroll_shop = false
-        end
-
-        if should_end then
-            chariot.reset_reroll()
+    --If a chaos is in the shop, fill our slots with judgements and fools, buy the chaos, and reroll
+    local shopChaos = chariot.chaos_in_shop()
+    if shopChaos ~= nil or chariot.valid_chaos_in_jokers() then
+        if shopChaos ~= nil then
+            chariot.execute(shopChaos, true, false, false)
+            G.E_MANAGER:add_event(Event({
+                trigger = 'after',
+                delay = 0.01,
+                blocking = false,
+                no_delete = true,
+                func = function()
+                    chariot.reroll_automatic(false)
+                    return true
+                end
+            }))
             return
         end
+       chariot.judgement_buyer()
+    --If no chaos is in the shop start using judgements until a chaos is in the shop
+    else
+        chariot.judgement_user()
     end
-
-    if reroll_shop then
-        G.FUNCS.reroll_shop()
-    end
-
-    G.E_MANAGER:add_event(Event({
-        trigger = 'after',
-        delay = 1,
-        func = function()
-            chariot.reroll_automatic()
-            return true
-        end
-    }))
 end
 
 chariot.card_in_shop = function()
@@ -258,7 +435,7 @@ chariot.card_in_shop = function()
 end
 
 chariot.verify_card = function(card)
-    if chariot.config.negative and card.edition and card.edition.type == "negative" then return "break" end
+    if chariot.config.negative and card.edition and card.edition.type == "negative" then return "negative" end
 
     if chariot.config.temperance and card.config.center_key == "c_temperance" then return "consumable" end
     if chariot.config.hermit and card.config.center_key == "c_hermit" then return "consumable" end
@@ -267,7 +444,7 @@ chariot.verify_card = function(card)
     if chariot.config.judgement and card.config.center_key == "c_judgement" then return "consumable" end
 
     if chariot.config.turtle_bean and card.config.center_key == "j_turtle_bean" then return "sell" end
-    if chariot.config.diet_cola and card.config.center_key == "j_diet_cola" then return "sell" end
+    if chariot.config.diet_cola and card.config.center_key == "j_diet_cola" then return "cola" end
     if chariot.config.brainstorm and card.config.center_key == "j_brainstorm" then return "sell" end
     if chariot.config.blueprint and card.config.center_key == "j_blueprint" then return "blueprint" end
     if chariot.config.chaos_the_clown and card.config.center_key == "j_chaos" then return "chaos" end
